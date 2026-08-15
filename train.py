@@ -15,7 +15,7 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=Fa
 
     # 1. Load Data
     print(f"Loading data from {data_dir}...")
-    train_loader, val_loader, class_names = load_dataset(data_dir, img_size=img_size, batch_size=batch_size)
+    train_loader, val_loader, class_names, class_weights = load_dataset(data_dir, img_size=img_size, batch_size=batch_size)
     n_classes = len(class_names)
     print(f"Found {n_classes} classes: {class_names}")
 
@@ -25,7 +25,8 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=Fa
     model.to(device)
 
     # 3. Loss and Optimizer
-    criterion = nn.CrossEntropyLoss()
+    print(f"Applying class weights: {class_weights}")
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # 4. Resume Checkpoint Logic
