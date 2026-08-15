@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from torchvision import datasets
 import torchvision.transforms.v2 as T
 import torch
@@ -59,4 +60,16 @@ def load_dataset(data_dir, img_size=256, val_split=0.2, batch_size=8):
         val_dataset, batch_size=batch_size, shuffle=False, num_workers=2
     )
     
-    return train_loader, val_loader, full_dataset.classes
+    # Calculate class weights from training dataset for Weighted Loss
+    train_indices = train_dataset.indices
+    targets = [full_dataset.targets[i] for i in train_indices]
+    
+    class_counts = np.bincount(targets, minlength=len(full_dataset.classes))
+    total_samples = len(targets)
+    n_classes = len(full_dataset.classes)
+    
+    # Formula: weight = total_samples / (n_classes * count)
+    class_weights = total_samples / (n_classes * (class_counts + 1e-6))
+    class_weights = torch.tensor(class_weights, dtype=torch.float32)
+    
+    return train_loader, val_loader, full_dataset.classes, class_weights
