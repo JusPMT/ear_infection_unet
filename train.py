@@ -8,7 +8,7 @@ from models.unet_2015.unet_model import UNet
 import os
 import csv
 
-def train_model(data_dir, epochs, batch_size, learning_rate, img_size):
+def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
@@ -27,16 +27,32 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    # 4. Training Loop
+    # 4. Resume Checkpoint Logic
+    start_epoch = 0
     best_val_acc = 0.0
+    latest_ckpt_path = 'checkpoints/latest_checkpoint.pth'
+    best_ckpt_path = 'checkpoints/best_unet_classifier.pth'
+    
+    if resume and os.path.exists(latest_ckpt_path):
+        print(f"Resuming training from {latest_ckpt_path}...")
+        checkpoint = torch.load(latest_ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']
+        best_val_acc = checkpoint.get('best_val_acc', 0.0)
+        print(f"Resumed at epoch {start_epoch+1} with best validation accuracy {best_val_acc:.2f}%")
+
+    # 5. Training Loop
     os.makedirs('checkpoints', exist_ok=True)
     
     csv_log_path = 'checkpoints/training_log.csv'
-    with open(csv_log_path, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Epoch', 'Train_Loss', 'Train_Acc', 'Val_Loss', 'Val_Acc'])
+    # Only write header if we are starting fresh (not resuming)
+    if not resume or not os.path.exists(csv_log_path):
+        with open(csv_log_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Epoch', 'Train_Loss', 'Train_Acc', 'Val_Loss', 'Val_Acc'])
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         model.train()
         running_loss = 0.0
         correct = 0
@@ -86,10 +102,18 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size):
             writer = csv.writer(file)
             writer.writerow([epoch+1, f"{train_loss:.4f}", f"{train_acc:.2f}", f"{val_loss:.4f}", f"{val_acc:.2f}"])
 
+        # Save latest checkpoint for resuming
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val_acc': best_val_acc,
+        }, latest_ckpt_path)
+
         # Save best model
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), 'checkpoints/best_unet_classifier.pth')
+            torch.save(model.state_dict(), best_ckpt_path)
             print(f"--> Saved best model with accuracy {best_val_acc:.2f}%")
 
 if __name__ == "__main__":
@@ -99,7 +123,8 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=8, help="Batch size")
     parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate")
     parser.add_argument('--img_size', type=int, default=256, help="Image size for resizing")
+    parser.add_argument('--resume', action='store_true', help="Resume training from latest checkpoint")
     
     args = parser.parse_args()
     
-    train_model(args.data_dir, args.epochs, args.batch_size, args.lr, args.img_size)
+    train_model(args.data_dir, args.epochs, args.batch_size, args.lr, args.img_size, args.resume)
