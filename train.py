@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from data.dataset import load_dataset
 from models.unet_2015.unet_model import UNet
 import os
+import csv
 
 def train_model(data_dir, epochs, batch_size, learning_rate, img_size):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -29,6 +30,11 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size):
     # 4. Training Loop
     best_val_acc = 0.0
     os.makedirs('checkpoints', exist_ok=True)
+    
+    csv_log_path = 'checkpoints/training_log.csv'
+    with open(csv_log_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Epoch', 'Train_Loss', 'Train_Acc', 'Val_Loss', 'Val_Acc'])
 
     for epoch in range(epochs):
         model.train()
@@ -75,6 +81,10 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size):
         print(f"Epoch [{epoch+1}/{epochs}] | "
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | "
               f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+              
+        with open(csv_log_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([epoch+1, f"{train_loss:.4f}", f"{train_acc:.2f}", f"{val_loss:.4f}", f"{val_acc:.2f}"])
 
         # Save best model
         if val_acc > best_val_acc:
