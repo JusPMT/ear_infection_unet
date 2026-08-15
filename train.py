@@ -7,6 +7,7 @@ from data.dataset import load_dataset
 from models.unet_2015.unet_model import UNet
 import os
 import csv
+from sklearn.metrics import precision_recall_fscore_support
 
 def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -50,7 +51,7 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=Fa
     if not resume or not os.path.exists(csv_log_path):
         with open(csv_log_path, mode='w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(['Epoch', 'Train_Loss', 'Train_Acc', 'Val_Loss', 'Val_Acc'])
+            writer.writerow(['Epoch', 'Train_Loss', 'Train_Acc', 'Val_Loss', 'Val_Acc', 'Val_Precision', 'Val_Recall', 'Val_F1'])
 
     for epoch in range(start_epoch, epochs):
         model.train()
@@ -80,6 +81,9 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=Fa
         val_loss = 0.0
         val_correct = 0
         val_total = 0
+        all_val_preds = []
+        all_val_labels = []
+        
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
@@ -90,17 +94,30 @@ def train_model(data_dir, epochs, batch_size, learning_rate, img_size, resume=Fa
                 _, predicted = torch.max(outputs.data, 1)
                 val_total += labels.size(0)
                 val_correct += (predicted == labels).sum().item()
+                
+                all_val_preds.extend(predicted.cpu().numpy())
+                all_val_labels.extend(labels.cpu().numpy())
 
         val_acc = 100 * val_correct / val_total
         val_loss = val_loss / len(val_loader)
+        
+        # Calculate Macro Precision, Recall, F1
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_val_labels, all_val_preds, average='macro', zero_division=0
+        )
 
         print(f"Epoch [{epoch+1}/{epochs}] | "
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | "
-              f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+              f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%, F1: {f1:.4f}")
               
         with open(csv_log_path, mode='a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([epoch+1, f"{train_loss:.4f}", f"{train_acc:.2f}", f"{val_loss:.4f}", f"{val_acc:.2f}"])
+            writer.writerow([
+                epoch+1, 
+                f"{train_loss:.4f}", f"{train_acc:.2f}", 
+                f"{val_loss:.4f}", f"{val_acc:.2f}",
+                f"{precision:.4f}", f"{recall:.4f}", f"{f1:.4f}"
+            ])
 
         # Save latest checkpoint for resuming
         torch.save({
